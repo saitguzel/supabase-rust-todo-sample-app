@@ -1,0 +1,65 @@
+name: todo-backend
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-todo}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-todo}
+      POSTGRES_DB: ${POSTGRES_DB:-todo}
+    ports:
+      # BIND_IP: dış erişim için 0.0.0.0 (veya sunucu IP'si), sadece yerel için 127.0.0.1.
+      - "${BIND_IP:-0.0.0.0}:${HOST_POSTGRES_PORT:-25433}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-todo} -d ${POSTGRES_DB:-todo}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ./todo-backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - ./todo-backend/.env
+    environment:
+      # Compose servis adı ile DSN (container içi ağ).
+      DATABASE_URL: postgres://${POSTGRES_USER:-todo}:${POSTGRES_PASSWORD:-todo}@postgres:5432/${POSTGRES_DB:-todo}
+      APP_HOST: 0.0.0.0
+      APP_PORT: 8080
+    ports:
+      # BIND_IP: dış erişim için 0.0.0.0 (veya sunucu IP'si), sadece yerel için 127.0.0.1.
+      - "${BIND_IP:-0.0.0.0}:${HOST_APP_PORT:-18081}:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/health | grep -q ok || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  web:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # Tarayıcı artık aynı origin üzerinden /api proxy'sini kullanır; bu değer
+        # yalnızca SSR/sunucu tarafı fallback'i için (dışarıdan erişilecek API adresi).
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://127.0.0.1:18081}
+        # Rewrites build anında donduğu için proxy hedefi build arg olarak verilir.
+        API_PROXY_TARGET: ${API_PROXY_TARGET:-http://api:8080}
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      # BIND_IP: dış erişim için 0.0.0.0 (veya sunucu IP'si), sadece yerel için 127.0.0.1.
+      - "${BIND_IP:-0.0.0.0}:${HOST_WEB_PORT:-3005}:3000"
+
+volumes:
+  pgdata:

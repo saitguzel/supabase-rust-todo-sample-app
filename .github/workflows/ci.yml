@@ -1,0 +1,78 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: fmt
+        working-directory: todo-backend
+        run: cargo fmt --check
+
+      - name: clippy
+        working-directory: todo-backend
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: test
+        working-directory: todo-backend
+        run: cargo test --locked
+
+      - name: audit
+        working-directory: todo-backend
+        run: |
+          cargo install cargo-audit --locked || true
+          cargo audit || true
+
+      - name: docker build
+        run: docker build -f todo-backend/Dockerfile todo-backend
+
+      - name: compose config (port çakışma kontrolü)
+        run: docker compose config
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: npm install
+        working-directory: frontend
+        run: npm ci
+
+      - name: typecheck
+        working-directory: frontend
+        run: npm run typecheck
+
+      # Tip güvenli istemcinin kaynağı (lib/api-spec.json) güncel backend ile
+      # senkron mu? Spec drift olursa generated tipler değişir → CI kırılır.
+      - name: API ayağa kaldır + openapi spec drift kontrolü
+        working-directory: frontend
+        run: |
+          docker compose up -d --wait api
+          npm run api:gen
+          if ! git diff --exit-code -- lib/api-spec.json lib/api-types.d.ts; then
+            echo "::error::OpenAPI spec değişmiş. 'npm run api:gen' çalıştırıp üretilen dosyaları commit edin."
+            git diff -- lib/api-spec.json lib/api-types.d.ts | head -50
+            exit 1
+          fi
+
+      - name: build
+        working-directory: frontend
+        run: npm run build

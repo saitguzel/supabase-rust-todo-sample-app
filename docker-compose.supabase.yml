@@ -1,0 +1,19 @@
+# Supabase yerel stack'ine bağlanma override'ı.
+# Kullanım:
+#   docker compose -f docker-compose.yml -f docker-compose.supabase.yml up -d api
+# Gereksinim: `npx supabase start` ile stack ayakta olmalı (ağ: supabase_network_<project_id>).
+# Geri dönmek için: docker compose up -d --force-recreate api
+services:
+  api:
+    environment:
+      # Supabase CLI DB'si (postgres rolü süperuser → RLS bypass; birincil yetki backend'de).
+      DATABASE_URL: postgres://postgres:postgres@supabase_db_supabase-rust-todo-sample-app:5432/postgres
+    networks:
+      - default
+      - supabase_network
+
+networks:
+  supabase_network:
+    # supabase/config.toml → project_id ile birebir aynı isim.
+    name: supabase_network_supabase-rust-todo-sample-app
+    external: true

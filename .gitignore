@@ -1,0 +1,11 @@
+target/
+.env
+pgdata/
+*.log
+node_modules/
+.next/
+*.tsbuildinfo
+dist/
+coverage/
+supabase/.temp/
+supabase/.branches/
